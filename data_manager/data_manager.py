@@ -2,6 +2,7 @@
 Data Manager
 - Subscribes to all mattress MQTT topics
 - Logs data to SQLite
+- Compares temperature vs setpoint and publishes relay commands
 """
 import json
 import sys
@@ -19,12 +20,23 @@ TOPICS = {
     "humidity":    "mattress/humidity",
     "setpoint":    "mattress/setpoint",
 }
+RELAY_TOPIC = "mattress/relay"
 
 state = {
     "temperature": None,
     "humidity":    None,
     "setpoint":    36.0,
+    "relay":       "idle",
 }
+
+
+def determine_relay_state(temp, setpoint):
+    delta = temp - setpoint
+    if delta < -1.0:
+        return "heating"
+    elif delta > 1.0:
+        return "cooling"
+    return "idle"
 
 
 def on_connect(client, userdata, flags, rc):
@@ -52,6 +64,12 @@ def on_message(client, userdata, msg):
             humidity = state["humidity"] if state["humidity"] is not None else 0.0
             insert_temperature(temp, humidity)
             print(f"[DM] Temperature logged: {temp}C")
+
+            relay_state = determine_relay_state(temp, state["setpoint"])
+            if relay_state != state["relay"]:
+                state["relay"] = relay_state
+                client.publish(RELAY_TOPIC, json.dumps({"state": relay_state}))
+                print(f"[DM] Relay command -> {relay_state}")
 
     elif topic == TOPICS["humidity"]:
         humidity = payload.get("humidity")

@@ -1,9 +1,34 @@
 """
 Main GUI - Personalized Adaptive Thermal Mattress
-Adds relay status card and alerts panel.
+Loads recent temperature + alert history from SQLite on startup.
 """
 import tkinter as tk
 from tkinter import ttk
+import json
+import threading
+import sys
+import os
+from collections import deque
+from datetime import datetime
+import paho.mqtt.client as mqtt
+import matplotlib
+matplotlib.use("TkAgg")
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from database.db_setup import init_db, get_recent_temperatures, get_recent_alerts
+
+BROKER = "localhost"
+PORT   = 1883
+
+TOPICS = [
+    "mattress/temperature",
+    "mattress/humidity",
+    "mattress/setpoint",
+    "mattress/relay",
+    "mattress/alerts",
+]
 
 RELAY_COLORS = {
     "idle":    "#4CAF50",
@@ -16,6 +41,8 @@ ALERT_COLORS = {
     "info":    "#4CAF50",
 }
 
+MAX_CHART_POINTS = 60
+
 
 class SmartMattressGUI:
     def __init__(self, root):
@@ -25,6 +52,10 @@ class SmartMattressGUI:
         self.root.geometry("950x700")
         self.root.resizable(True, True)
 
+        self.temp_history    = deque(maxlen=MAX_CHART_POINTS)
+        self.time_history    = deque(maxlen=MAX_CHART_POINTS)
+        self.setpoint_history = deque(maxlen=MAX_CHART_POINTS)
+
         self.current_temp     = tk.StringVar(value="--")
         self.current_humidity = tk.StringVar(value="--")
         self.current_setpoint = tk.StringVar(value="--")
@@ -32,6 +63,8 @@ class SmartMattressGUI:
         self.alert_var        = tk.StringVar(value="No alerts")
 
         self._build_ui()
+        self._load_history()
+        self._start_mqtt()
 
     def _build_ui(self):
         style = ttk.Style()
@@ -55,6 +88,10 @@ class SmartMattressGUI:
         self._build_stat_card(left, "Setpoint",     self.current_setpoint, "C", "#A6E3A1")
         self._build_relay_card(left)
         self._build_alerts_panel(left)
+
+        right = tk.Frame(content, bg="#1E1E2E")
+        right.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self._build_chart(right)
 
     def _build_stat_card(self, parent, label, var, unit, color):
         card = tk.Frame(parent, bg="#313244", padx=14, pady=10, relief=tk.FLAT)
@@ -96,8 +133,117 @@ class SmartMattressGUI:
         )
         self.alert_listbox.pack(fill=tk.X)
 
+    def _build_chart(self, parent):
+        tk.Label(parent, text="Live Temperature vs Setpoint",
+                 font=("Segoe UI", 10, "bold"), fg="#CDD6F4", bg="#1E1E2E").pack(pady=(0, 4))
+
+        self.fig = Figure(figsize=(5.5, 4), dpi=96, facecolor="#1E1E2E")
+        self.ax  = self.fig.add_subplot(111)
+        self.ax.set_facecolor("#313244")
+        self.ax.tick_params(colors="#A6ADC8")
+        for spine in self.ax.spines.values():
+            spine.set_edgecolor("#45475A")
+        self.line_temp, = self.ax.plot([], [], color="#F38BA8", linewidth=2, label="Temperature")
+        self.line_set,  = self.ax.plot([], [], color="#A6E3A1", linewidth=1.5,
+                                        linestyle="--", label="Setpoint")
+        self.ax.legend(facecolor="#313244", labelcolor="#CDD6F4", fontsize=8)
+        self.ax.set_ylabel("C", color="#A6ADC8")
+
+        self.canvas = FigureCanvasTkAgg(self.fig, master=parent)
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+    def _load_history(self):
+        rows = get_recent_temperatures(limit=MAX_CHART_POINTS)
+        for ts, temp, _ in reversed(rows):
+            self.temp_history.append(temp)
+            self.time_history.append(ts)
+        self._update_chart()
+
+        alert_rows = get_recent_alerts(limit=20)
+        for ts, level, msg in reversed(alert_rows):
+            self.alert_listbox.insert(tk.END, f"[{level.upper()}] {ts[-8:]} {msg}")
+
+    def _start_mqtt(self):
+        self.mqtt_client = mqtt.Client(client_id="gui_client")
+        self.mqtt_client.on_connect = self._on_connect
+        self.mqtt_client.on_message = self._on_message
+        try:
+            self.mqtt_client.connect(BROKER, PORT, keepalive=60)
+            t = threading.Thread(target=self.mqtt_client.loop_forever, daemon=True)
+            t.start()
+        except Exception as e:
+            print(f"[GUI] MQTT connection failed: {e}")
+
+    def _on_connect(self, client, userdata, flags, rc):
+        if rc == 0:
+            for topic in TOPICS:
+                client.subscribe(topic)
+            print("[GUI] Connected and subscribed to all topics")
+
+    def _on_message(self, client, userdata, msg):
+        try:
+            payload = json.loads(msg.payload.decode())
+        except Exception:
+            return
+        topic = msg.topic
+        self.root.after(0, self._handle_message, topic, payload)
+
+    def _handle_message(self, topic, payload):
+        if topic == "mattress/temperature":
+            temp = payload.get("temperature")
+            if temp is not None:
+                self.current_temp.set(f"{temp:.1f}")
+                self.temp_history.append(temp)
+                self.time_history.append(datetime.now().strftime("%H:%M:%S"))
+                self._update_chart()
+
+        elif topic == "mattress/humidity":
+            hum = payload.get("humidity")
+            if hum is not None:
+                self.current_humidity.set(f"{hum:.1f}")
+
+        elif topic == "mattress/setpoint":
+            sp = payload.get("setpoint")
+            if sp is not None:
+                self.current_setpoint.set(f"{sp:.1f}")
+                self.setpoint_history.append(sp)
+                self._update_chart()
+
+        elif topic == "mattress/relay":
+            state = payload.get("state", "idle").lower()
+            color = RELAY_COLORS.get(state, "#CDD6F4")
+            self.relay_label.config(text=state.upper(), fg=color)
+
+        elif topic == "mattress/alerts":
+            level = payload.get("level", "info")
+            msg   = payload.get("message", "")
+            color = ALERT_COLORS.get(level, "#CDD6F4")
+            self.alert_var.set(msg)
+            self.alert_label.config(fg=color)
+            ts = datetime.now().strftime("%H:%M:%S")
+            self.alert_listbox.insert(tk.END, f"[{level.upper()}] {ts} {msg}")
+            self.alert_listbox.see(tk.END)
+
+    def _update_chart(self):
+        temps = list(self.temp_history)
+        sets  = list(self.setpoint_history)
+        x     = list(range(len(temps)))
+
+        self.line_temp.set_data(x, temps)
+
+        if sets:
+            pad = len(temps) - len(sets)
+            if pad > 0:
+                sets = [sets[0]] * pad + sets
+            self.line_set.set_data(list(range(len(sets))), sets[-len(temps):])
+
+        self.ax.relim()
+        self.ax.autoscale_view()
+        self.canvas.draw_idle()
+
 
 def main():
+    init_db()
     root = tk.Tk()
     app = SmartMattressGUI(root)
     root.protocol("WM_DELETE_WINDOW", root.destroy)
