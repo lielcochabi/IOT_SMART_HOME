@@ -3,14 +3,17 @@ Data Manager
 - Subscribes to all mattress MQTT topics
 - Logs data to SQLite
 - Compares temperature vs setpoint and publishes relay commands
+- Publishes warning/alarm alerts
 """
 import json
 import sys
 import os
 import paho.mqtt.client as mqtt
+import sys
+sys.stdout.reconfigure(encoding="utf-8")
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from database.db_setup import init_db, insert_temperature, insert_setpoint
+from database.db_setup import init_db, insert_temperature, insert_setpoint, insert_alert
 
 BROKER = "localhost"
 PORT = 1883
@@ -20,13 +23,20 @@ TOPICS = {
     "humidity":    "mattress/humidity",
     "setpoint":    "mattress/setpoint",
 }
-RELAY_TOPIC = "mattress/relay"
+RELAY_TOPIC  = "mattress/relay"
+ALERTS_TOPIC = "mattress/alerts"
+
+WARNING_DELTA = 2.0   # °C difference -> Warning
+ALARM_DELTA   = 4.0   # °C difference -> Alarm
+EXTREME_LOW   = 10.0  # °C absolute -> Alarm
+EXTREME_HIGH  = 45.0  # °C absolute -> Alarm
 
 state = {
     "temperature": None,
     "humidity":    None,
     "setpoint":    36.0,
     "relay":       "idle",
+    "last_alert":  None,
 }
 
 
@@ -39,14 +49,38 @@ def determine_relay_state(temp, setpoint):
     return "idle"
 
 
-def on_connect(client, userdata, flags, rc):
-    if rc == 0:
+def evaluate_alerts(client, temp, setpoint):
+    delta = abs(temp - setpoint)
+    alert_level = None
+    alert_msg = None
+
+    if temp <= EXTREME_LOW or temp >= EXTREME_HIGH:
+        alert_level = "alarm"
+        alert_msg = f"EXTREME temperature detected: {temp}°C"
+    elif delta >= ALARM_DELTA:
+        alert_level = "alarm"
+        alert_msg = f"Temperature {temp}°C is far from setpoint {setpoint}°C (delta={delta:.1f}°C)"
+    elif delta >= WARNING_DELTA:
+        alert_level = "warning"
+        alert_msg = f"Temperature {temp}°C deviating from setpoint {setpoint}°C (delta={delta:.1f}°C)"
+
+    if alert_level and alert_msg != state["last_alert"]:
+        state["last_alert"] = alert_msg
+        insert_alert(alert_level, alert_msg)
+        client.publish(ALERTS_TOPIC, json.dumps({"level": alert_level, "message": alert_msg}))
+        print(f"[DM] ALERT [{alert_level.upper()}] {alert_msg}")
+    elif not alert_level:
+        state["last_alert"] = None
+
+
+def on_connect(client, userdata, connect_flags, reason_code, properties):
+    if not reason_code.is_failure:
         print("[DM] Connected to MQTT broker")
         for topic in TOPICS.values():
             client.subscribe(topic)
             print(f"[DM] Subscribed to '{topic}'")
     else:
-        print(f"[DM] Connection failed with code {rc}")
+        print(f"[DM] Connection failed: {reason_code}")
 
 
 def on_message(client, userdata, msg):
@@ -63,13 +97,15 @@ def on_message(client, userdata, msg):
             state["temperature"] = temp
             humidity = state["humidity"] if state["humidity"] is not None else 0.0
             insert_temperature(temp, humidity)
-            print(f"[DM] Temperature logged: {temp}C")
+            print(f"[DM] Temperature logged: {temp}°C")
 
             relay_state = determine_relay_state(temp, state["setpoint"])
             if relay_state != state["relay"]:
                 state["relay"] = relay_state
                 client.publish(RELAY_TOPIC, json.dumps({"state": relay_state}))
                 print(f"[DM] Relay command -> {relay_state}")
+
+            evaluate_alerts(client, temp, state["setpoint"])
 
     elif topic == TOPICS["humidity"]:
         humidity = payload.get("humidity")
@@ -81,12 +117,12 @@ def on_message(client, userdata, msg):
         if setpoint is not None:
             state["setpoint"] = setpoint
             insert_setpoint(setpoint)
-            print(f"[DM] Setpoint updated: {setpoint}C")
+            print(f"[DM] Setpoint updated: {setpoint}°C")
 
 
 def main():
     init_db()
-    client = mqtt.Client(client_id="data_manager")
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="data_manager")
     client.on_connect = on_connect
     client.on_message = on_message
     client.connect(BROKER, PORT, keepalive=60)

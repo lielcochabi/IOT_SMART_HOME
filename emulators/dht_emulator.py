@@ -1,12 +1,14 @@
 """
 DHT Sensor Emulator
 Publishes simulated temperature and humidity readings every 3 seconds.
-Temperature slowly rises toward body heat (~36C) with small random variation.
+Temperature slowly rises toward body heat (~36°C) with small random variation.
 """
 import time
 import random
 import json
 import paho.mqtt.client as mqtt
+import sys
+sys.stdout.reconfigure(encoding="utf-8")
 
 BROKER = "localhost"
 PORT = 1883
@@ -31,15 +33,15 @@ def simulate_humidity(current_humidity):
     return round(max(30.0, min(80.0, current_humidity + noise)), 2)
 
 
-def on_connect(client, userdata, flags, rc):
-    if rc == 0:
+def on_connect(client, userdata, connect_flags, reason_code, properties):
+    if not reason_code.is_failure:
         print("[DHT] Connected to MQTT broker")
     else:
-        print(f"[DHT] Connection failed with code {rc}")
+        print(f"[DHT] Connection failed: {reason_code}")
 
 
 def main():
-    client = mqtt.Client(client_id="dht_emulator")
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="dht_emulator")
     client.on_connect = on_connect
     client.connect(BROKER, PORT, keepalive=60)
     client.loop_start()
@@ -55,7 +57,7 @@ def main():
 
             client.publish(TEMP_TOPIC, json.dumps({"temperature": temp}))
             client.publish(HUMIDITY_TOPIC, json.dumps({"humidity": humidity}))
-            print(f"[DHT] Published -> temp={temp}C  humidity={humidity}%")
+            print(f"[DHT] Published -> temp={temp}°C  humidity={humidity}%")
 
             time.sleep(PUBLISH_INTERVAL)
     except KeyboardInterrupt:

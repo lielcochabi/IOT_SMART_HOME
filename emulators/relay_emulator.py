@@ -5,6 +5,8 @@ States: idle | heating | cooling
 """
 import json
 import paho.mqtt.client as mqtt
+import sys
+sys.stdout.reconfigure(encoding="utf-8")
 
 BROKER = "localhost"
 PORT = 1883
@@ -18,13 +20,13 @@ STATE_COLORS = {
 }
 
 
-def on_connect(client, userdata, flags, rc):
-    if rc == 0:
+def on_connect(client, userdata, connect_flags, reason_code, properties):
+    if not reason_code.is_failure:
         print("[RELAY] Connected to MQTT broker")
         client.subscribe(RELAY_TOPIC)
         print(f"[RELAY] Subscribed to '{RELAY_TOPIC}'")
     else:
-        print(f"[RELAY] Connection failed with code {rc}")
+        print(f"[RELAY] Connection failed: {reason_code}")
 
 
 def on_message(client, userdata, msg):
@@ -39,7 +41,7 @@ def on_message(client, userdata, msg):
 
 
 def main():
-    client = mqtt.Client(client_id="relay_emulator")
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="relay_emulator")
     client.on_connect = on_connect
     client.on_message = on_message
     client.connect(BROKER, PORT, keepalive=60)

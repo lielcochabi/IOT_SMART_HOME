@@ -1,6 +1,6 @@
 """
-Main GUI - Personalized Adaptive Thermal Mattress
-Loads recent temperature + alert history from SQLite on startup.
+Main GUI — Personalized Adaptive Thermal Mattress
+Displays live temperature, humidity, setpoint, relay state, alerts, and a historical chart.
 """
 import tkinter as tk
 from tkinter import ttk
@@ -47,7 +47,7 @@ MAX_CHART_POINTS = 60
 class SmartMattressGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Smart Thermal Mattress - Control Panel")
+        self.root.title("Smart Thermal Mattress — Control Panel")
         self.root.configure(bg="#1E1E2E")
         self.root.geometry("950x700")
         self.root.resizable(True, True)
@@ -66,29 +66,35 @@ class SmartMattressGUI:
         self._load_history()
         self._start_mqtt()
 
+    # ── UI Construction ──────────────────────────────────────────────────────
+
     def _build_ui(self):
         style = ttk.Style()
         style.theme_use("clam")
 
+        # Header
         header = tk.Frame(self.root, bg="#11111B", pady=10)
         header.pack(fill=tk.X)
         tk.Label(
-            header, text="Smart Thermal Mattress",
+            header, text="🛏  Smart Thermal Mattress",
             font=("Segoe UI", 18, "bold"), fg="#CDD6F4", bg="#11111B"
         ).pack()
 
+        # Main content
         content = tk.Frame(self.root, bg="#1E1E2E")
         content.pack(fill=tk.BOTH, expand=True, padx=12, pady=8)
 
+        # Left column: stats + alerts
         left = tk.Frame(content, bg="#1E1E2E")
         left.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 8))
 
-        self._build_stat_card(left, "Temperature",  self.current_temp,     "C", "#F38BA8")
-        self._build_stat_card(left, "Humidity",     self.current_humidity, "%", "#89DCEB")
-        self._build_stat_card(left, "Setpoint",     self.current_setpoint, "C", "#A6E3A1")
+        self._build_stat_card(left, "Temperature",  self.current_temp,     "°C", "#F38BA8")
+        self._build_stat_card(left, "Humidity",     self.current_humidity, "%",  "#89DCEB")
+        self._build_stat_card(left, "Setpoint",     self.current_setpoint, "°C", "#A6E3A1")
         self._build_relay_card(left)
         self._build_alerts_panel(left)
 
+        # Right column: live chart
         right = tk.Frame(content, bg="#1E1E2E")
         right.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self._build_chart(right)
@@ -147,10 +153,12 @@ class SmartMattressGUI:
         self.line_set,  = self.ax.plot([], [], color="#A6E3A1", linewidth=1.5,
                                         linestyle="--", label="Setpoint")
         self.ax.legend(facecolor="#313244", labelcolor="#CDD6F4", fontsize=8)
-        self.ax.set_ylabel("C", color="#A6ADC8")
+        self.ax.set_ylabel("°C", color="#A6ADC8")
 
         self.canvas = FigureCanvasTkAgg(self.fig, master=parent)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+    # ── History Loading ───────────────────────────────────────────────────────
 
     def _load_history(self):
         rows = get_recent_temperatures(limit=MAX_CHART_POINTS)
@@ -163,8 +171,10 @@ class SmartMattressGUI:
         for ts, level, msg in reversed(alert_rows):
             self.alert_listbox.insert(tk.END, f"[{level.upper()}] {ts[-8:]} {msg}")
 
+    # ── MQTT ─────────────────────────────────────────────────────────────────
+
     def _start_mqtt(self):
-        self.mqtt_client = mqtt.Client(client_id="gui_client")
+        self.mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="gui_client")
         self.mqtt_client.on_connect = self._on_connect
         self.mqtt_client.on_message = self._on_message
         try:
@@ -174,8 +184,8 @@ class SmartMattressGUI:
         except Exception as e:
             print(f"[GUI] MQTT connection failed: {e}")
 
-    def _on_connect(self, client, userdata, flags, rc):
-        if rc == 0:
+    def _on_connect(self, client, userdata, connect_flags, reason_code, properties):
+        if not reason_code.is_failure:
             for topic in TOPICS:
                 client.subscribe(topic)
             print("[GUI] Connected and subscribed to all topics")
@@ -224,6 +234,8 @@ class SmartMattressGUI:
             self.alert_listbox.insert(tk.END, f"[{level.upper()}] {ts} {msg}")
             self.alert_listbox.see(tk.END)
 
+    # ── Chart Update ──────────────────────────────────────────────────────────
+
     def _update_chart(self):
         temps = list(self.temp_history)
         sets  = list(self.setpoint_history)
@@ -232,6 +244,7 @@ class SmartMattressGUI:
         self.line_temp.set_data(x, temps)
 
         if sets:
+            # Pad or trim setpoint line to match temp length
             pad = len(temps) - len(sets)
             if pad > 0:
                 sets = [sets[0]] * pad + sets
