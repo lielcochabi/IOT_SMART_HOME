@@ -20,7 +20,7 @@ STATE_COLORS = {
 }
 
 
-def on_connect(client, userdata, connect_flags, reason_code, properties):
+def on_connect(client, _, connect_flags, reason_code, properties):
     if not reason_code.is_failure:
         print("[RELAY] Connected to MQTT broker")
         client.subscribe(RELAY_TOPIC)
@@ -29,7 +29,7 @@ def on_connect(client, userdata, connect_flags, reason_code, properties):
         print(f"[RELAY] Connection failed: {reason_code}")
 
 
-def on_message(client, userdata, msg):
+def on_message(client, _, msg):
     try:
         payload = json.loads(msg.payload.decode())
         state = payload.get("state", "idle").lower()

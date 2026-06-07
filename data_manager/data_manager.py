@@ -73,7 +73,7 @@ def evaluate_alerts(client, temp, setpoint):
         state["last_alert"] = None
 
 
-def on_connect(client, userdata, connect_flags, reason_code, properties):
+def on_connect(client, _, connect_flags, reason_code, properties):
     if not reason_code.is_failure:
         print("[DM] Connected to MQTT broker")
         for topic in TOPICS.values():
@@ -83,7 +83,7 @@ def on_connect(client, userdata, connect_flags, reason_code, properties):
         print(f"[DM] Connection failed: {reason_code}")
 
 
-def on_message(client, userdata, msg):
+def on_message(client, _, msg):
     topic = msg.topic
     try:
         payload = json.loads(msg.payload.decode())

@@ -184,13 +184,13 @@ class SmartMattressGUI:
         except Exception as e:
             print(f"[GUI] MQTT connection failed: {e}")
 
-    def _on_connect(self, client, userdata, connect_flags, reason_code, properties):
+    def _on_connect(self, client, _, connect_flags, reason_code, properties):
         if not reason_code.is_failure:
             for topic in TOPICS:
                 client.subscribe(topic)
             print("[GUI] Connected and subscribed to all topics")
 
-    def _on_message(self, client, userdata, msg):
+    def _on_message(self, client, _, msg):
         try:
             payload = json.loads(msg.payload.decode())
         except Exception:

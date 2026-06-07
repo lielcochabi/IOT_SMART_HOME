@@ -12,7 +12,7 @@ MIN_TEMP = 15.0
 MAX_TEMP = 45.0
 
 
-def on_connect(client, userdata, connect_flags, reason_code, properties):
+def on_connect(client, _, connect_flags, reason_code, properties):
     if not reason_code.is_failure:
         print("[KNOB] Connected to MQTT broker")
     else:

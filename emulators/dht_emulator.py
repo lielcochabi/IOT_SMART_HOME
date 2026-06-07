@@ -32,7 +32,7 @@ def simulate_humidity(current_humidity, current_temp):
     return round(max(30.0, min(80.0, current_humidity + drift + noise)), 2)
 
 
-def on_connect(client, userdata, connect_flags, reason_code, properties):
+def on_connect(client, _, connect_flags, reason_code, properties):
     if not reason_code.is_failure:
         print("[DHT] Connected to MQTT broker")
         client.subscribe(SETPOINT_TOPIC)
@@ -40,7 +40,7 @@ def on_connect(client, userdata, connect_flags, reason_code, properties):
         print(f"[DHT] Connection failed: {reason_code}")
 
 
-def on_message(client, userdata, msg):
+def on_message(client, _, msg):
     try:
         payload = json.loads(msg.payload.decode())
     except Exception:
