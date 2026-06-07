@@ -1,8 +1,3 @@
-"""
-Knob Emulator
-Lets the user type a desired setpoint temperature via CLI,
-then publishes it to mattress/setpoint.
-"""
 import json
 import paho.mqtt.client as mqtt
 import sys
@@ -31,11 +26,11 @@ def main():
     client.loop_start()
 
     current_setpoint = DEFAULT_SETPOINT
-    # Publish the default setpoint on startup
-    client.publish(SETPOINT_TOPIC, json.dumps({"setpoint": current_setpoint}))
+    # retain=True ensures any component that connects later gets the current setpoint immediately
+    client.publish(SETPOINT_TOPIC, json.dumps({"setpoint": current_setpoint}), retain=True)
     print(f"[KNOB] Default setpoint published: {current_setpoint}°C")
 
-    print("[KNOB] Knob emulator running. Enter a temperature setpoint (15–45°C) or 'q' to quit.")
+    print("[KNOB] Knob emulator running. Enter a temperature setpoint (15-45°C) or 'q' to quit.")
     try:
         while True:
             user_input = input(f"[KNOB] Enter setpoint (current={current_setpoint}°C): ").strip()
@@ -44,10 +39,10 @@ def main():
             try:
                 value = float(user_input)
                 if not (MIN_TEMP <= value <= MAX_TEMP):
-                    print(f"[KNOB] Value out of range ({MIN_TEMP}–{MAX_TEMP}°C). Try again.")
+                    print(f"[KNOB] Value out of range ({MIN_TEMP}-{MAX_TEMP}°C). Try again.")
                     continue
                 current_setpoint = round(value, 1)
-                client.publish(SETPOINT_TOPIC, json.dumps({"setpoint": current_setpoint}))
+                client.publish(SETPOINT_TOPIC, json.dumps({"setpoint": current_setpoint}), retain=True)
                 print(f"[KNOB] Published setpoint -> {current_setpoint}°C")
             except ValueError:
                 print("[KNOB] Invalid input. Enter a number.")

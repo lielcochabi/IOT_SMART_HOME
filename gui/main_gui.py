@@ -52,9 +52,9 @@ class SmartMattressGUI:
         self.root.geometry("950x700")
         self.root.resizable(True, True)
 
-        self.temp_history    = deque(maxlen=MAX_CHART_POINTS)
-        self.time_history    = deque(maxlen=MAX_CHART_POINTS)
-        self.setpoint_history = deque(maxlen=MAX_CHART_POINTS)
+        self.temp_history           = deque(maxlen=MAX_CHART_POINTS)  # rolling window for chart
+        self.time_history           = deque(maxlen=MAX_CHART_POINTS)
+        self.current_setpoint_value = None  # drawn as a flat line on the chart
 
         self.current_temp     = tk.StringVar(value="--")
         self.current_humidity = tk.StringVar(value="--")
@@ -196,6 +196,7 @@ class SmartMattressGUI:
         except Exception:
             return
         topic = msg.topic
+        # Marshal update to the main thread — Tkinter is not thread-safe
         self.root.after(0, self._handle_message, topic, payload)
 
     def _handle_message(self, topic, payload):
@@ -216,7 +217,7 @@ class SmartMattressGUI:
             sp = payload.get("setpoint")
             if sp is not None:
                 self.current_setpoint.set(f"{sp:.1f}")
-                self.setpoint_history.append(sp)
+                self.current_setpoint_value = sp
                 self._update_chart()
 
         elif topic == "mattress/relay":
@@ -238,17 +239,12 @@ class SmartMattressGUI:
 
     def _update_chart(self):
         temps = list(self.temp_history)
-        sets  = list(self.setpoint_history)
         x     = list(range(len(temps)))
 
         self.line_temp.set_data(x, temps)
 
-        if sets:
-            # Pad or trim setpoint line to match temp length
-            pad = len(temps) - len(sets)
-            if pad > 0:
-                sets = [sets[0]] * pad + sets
-            self.line_set.set_data(list(range(len(sets))), sets[-len(temps):])
+        if self.current_setpoint_value is not None and temps:
+            self.line_set.set_data(x, [self.current_setpoint_value] * len(temps))
 
         self.ax.relim()
         self.ax.autoscale_view()
