@@ -8,6 +8,7 @@ Data Manager
 import json
 import sys
 import os
+import time
 import paho.mqtt.client as mqtt
 import sys
 sys.stdout.reconfigure(encoding="utf-8")
@@ -26,17 +27,19 @@ TOPICS = {
 RELAY_TOPIC  = "mattress/relay"
 ALERTS_TOPIC = "mattress/alerts"
 
-WARNING_DELTA = 2.0   # °C difference -> Warning
-ALARM_DELTA   = 4.0   # °C difference -> Alarm
-EXTREME_LOW   = 10.0  # °C absolute -> Alarm
-EXTREME_HIGH  = 45.0  # °C absolute -> Alarm
+WARNING_DELTA        = 2.0   # °C difference -> Warning
+ALARM_DELTA          = 4.0   # °C difference -> Alarm
+EXTREME_LOW          = 10.0  # °C absolute -> Alarm
+EXTREME_HIGH         = 45.0  # °C absolute -> Alarm
+ALERT_REPEAT_INTERVAL = 30   # seconds before the same alert is allowed to fire again
 
 state = {
-    "temperature": None,
-    "humidity":    None,
-    "setpoint":    36.0,
-    "relay":       "idle",
-    "last_alert":  None,
+    "temperature":    None,
+    "humidity":       None,
+    "setpoint":       36.0,
+    "relay":          "idle",
+    "last_alert":     None,
+    "last_alert_time": 0,    # epoch seconds of the last alert publish
 }
 
 
@@ -50,27 +53,35 @@ def determine_relay_state(temp, setpoint):
 
 
 def evaluate_alerts(client, temp, setpoint):
-    delta = abs(temp - setpoint)
+    delta = temp - setpoint
     alert_level = None
     alert_msg = None
 
-    if temp <= EXTREME_LOW or temp >= EXTREME_HIGH:
+    if temp <= EXTREME_LOW:
         alert_level = "alarm"
-        alert_msg = f"EXTREME temperature detected: {temp}°C"
-    elif delta >= ALARM_DELTA:
+        alert_msg = "Temperature critically low — immediate action required"
+    elif temp >= EXTREME_HIGH:
         alert_level = "alarm"
-        alert_msg = f"Temperature {temp}°C is far from setpoint {setpoint}°C (delta={delta:.1f}°C)"
-    elif delta >= WARNING_DELTA:
+        alert_msg = "Temperature critically high — immediate action required"
+    elif abs(delta) >= ALARM_DELTA:
+        alert_level = "alarm"
+        alert_msg = "Temperature too low" if delta < 0 else "Temperature too high"
+    elif abs(delta) >= WARNING_DELTA:
         alert_level = "warning"
-        alert_msg = f"Temperature {temp}°C deviating from setpoint {setpoint}°C (delta={delta:.1f}°C)"
+        alert_msg = "Temperature too low" if delta < 0 else "Temperature too high"
 
-    if alert_level and alert_msg != state["last_alert"]:
-        state["last_alert"] = alert_msg
-        insert_alert(alert_level, alert_msg)
-        client.publish(ALERTS_TOPIC, json.dumps({"level": alert_level, "message": alert_msg}))
-        print(f"[DM] ALERT [{alert_level.upper()}] {alert_msg}")
-    elif not alert_level:
+    if alert_level:
+        now = time.time()
+        # Fire if: alert changed, OR same alert but enough time passed (handles emulator restarts)
+        if alert_msg != state["last_alert"] or (now - state["last_alert_time"]) > ALERT_REPEAT_INTERVAL:
+            state["last_alert"] = alert_msg
+            state["last_alert_time"] = now
+            insert_alert(alert_level, alert_msg)
+            client.publish(ALERTS_TOPIC, json.dumps({"level": alert_level, "message": alert_msg}))
+            print(f"[DM] ALERT [{alert_level.upper()}] {alert_msg}")
+    else:
         state["last_alert"] = None
+        state["last_alert_time"] = 0
 
 
 def on_connect(client, _, connect_flags, reason_code, properties):

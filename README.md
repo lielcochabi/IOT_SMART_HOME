@@ -19,7 +19,7 @@ Relay Emulator       ◄─┘                        │
 | `mattress/humidity`      | DHT Emulator      | Data Manager, GUI  |
 | `mattress/setpoint`      | Knob Emulator     | Data Manager, GUI  |
 | `mattress/relay`         | Data Manager      | Relay Emulator, GUI|
-| `mattress/alerts`        | Data Manager      | GUI                |
+| `mattress/alerts`        | Data Manager      | (logged to DB)     |
 
 ## Components
 - **emulators/** — DHT sensor, Knob, and Relay emulators

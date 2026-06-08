@@ -1,6 +1,6 @@
 """
 Main GUI — Personalized Adaptive Thermal Mattress
-Displays live temperature, humidity, setpoint, relay state, alerts, and a historical chart.
+Displays live temperature, humidity, setpoint, relay state, and a historical chart.
 """
 import tkinter as tk
 from tkinter import ttk
@@ -17,7 +17,7 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from database.db_setup import init_db, get_recent_temperatures, get_recent_alerts
+from database.db_setup import init_db, get_recent_temperatures
 
 BROKER = "localhost"
 PORT   = 1883
@@ -35,10 +35,11 @@ RELAY_COLORS = {
     "heating": "#F44336",
     "cooling": "#2196F3",
 }
+
 ALERT_COLORS = {
-    "warning": "#FFC107",
-    "alarm":   "#F44336",
-    "info":    "#4CAF50",
+    "ok":      "#A6E3A1",  # green
+    "warning": "#FFC107",  # amber
+    "alarm":   "#F44336",  # red
 }
 
 MAX_CHART_POINTS = 60
@@ -60,7 +61,8 @@ class SmartMattressGUI:
         self.current_humidity = tk.StringVar(value="--")
         self.current_setpoint = tk.StringVar(value="--")
         self.relay_state      = tk.StringVar(value="idle")
-        self.alert_var        = tk.StringVar(value="No alerts")
+        self.alert_level_var  = tk.StringVar(value="OK")
+        self.alert_msg_var    = tk.StringVar(value="System normal")
 
         self._build_ui()
         self._load_history()
@@ -84,7 +86,7 @@ class SmartMattressGUI:
         content = tk.Frame(self.root, bg="#1E1E2E")
         content.pack(fill=tk.BOTH, expand=True, padx=12, pady=8)
 
-        # Left column: stats + alerts
+        # Left column: stats + relay
         left = tk.Frame(content, bg="#1E1E2E")
         left.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 8))
 
@@ -92,7 +94,7 @@ class SmartMattressGUI:
         self._build_stat_card(left, "Humidity",     self.current_humidity, "%",  "#89DCEB")
         self._build_stat_card(left, "Setpoint",     self.current_setpoint, "°C", "#A6E3A1")
         self._build_relay_card(left)
-        self._build_alerts_panel(left)
+        self._build_alert_card(left)
 
         # Right column: live chart
         right = tk.Frame(content, bg="#1E1E2E")
@@ -115,29 +117,26 @@ class SmartMattressGUI:
                  fg="#A6ADC8", bg="#313244").pack(anchor=tk.W)
         self.relay_label = tk.Label(
             self.relay_frame, text="IDLE",
-            font=("Segoe UI", 16, "bold"), fg=RELAY_COLORS["idle"], bg="#313244"
+            font=("Segoe UI", 26, "bold"), fg=RELAY_COLORS["idle"], bg="#313244"
         )
         self.relay_label.pack(anchor=tk.W)
 
-    def _build_alerts_panel(self, parent):
-        frame = tk.Frame(parent, bg="#313244", padx=14, pady=10)
-        frame.pack(fill=tk.X, pady=4)
-        tk.Label(frame, text="Latest Alert", font=("Segoe UI", 9),
+    def _build_alert_card(self, parent):
+        card = tk.Frame(parent, bg="#313244", padx=14, pady=10, relief=tk.FLAT)
+        card.pack(fill=tk.X, pady=4)
+        tk.Label(card, text="Alert Status", font=("Segoe UI", 9),
                  fg="#A6ADC8", bg="#313244").pack(anchor=tk.W)
-        self.alert_label = tk.Label(
-            frame, textvariable=self.alert_var,
-            font=("Segoe UI", 9), fg="#A6E3A1", bg="#313244",
-            wraplength=200, justify=tk.LEFT
+        self.alert_level_label = tk.Label(
+            card, textvariable=self.alert_level_var,
+            font=("Segoe UI", 26, "bold"), fg=ALERT_COLORS["ok"], bg="#313244"
         )
-        self.alert_label.pack(anchor=tk.W)
-
-        tk.Label(frame, text="Alert History", font=("Segoe UI", 9),
-                 fg="#A6ADC8", bg="#313244").pack(anchor=tk.W, pady=(8, 2))
-        self.alert_listbox = tk.Listbox(
-            frame, bg="#1E1E2E", fg="#CDD6F4", font=("Consolas", 8),
-            height=6, bd=0, highlightthickness=0, selectbackground="#45475A"
+        self.alert_level_label.pack(anchor=tk.W)
+        self.alert_msg_label = tk.Label(
+            card, textvariable=self.alert_msg_var,
+            font=("Segoe UI", 9), fg=ALERT_COLORS["ok"], bg="#313244",
+            wraplength=190, justify=tk.LEFT
         )
-        self.alert_listbox.pack(fill=tk.X)
+        self.alert_msg_label.pack(anchor=tk.W)
 
     def _build_chart(self, parent):
         tk.Label(parent, text="Live Temperature vs Setpoint",
@@ -167,9 +166,6 @@ class SmartMattressGUI:
             self.time_history.append(ts)
         self._update_chart()
 
-        alert_rows = get_recent_alerts(limit=20)
-        for ts, level, msg in reversed(alert_rows):
-            self.alert_listbox.insert(tk.END, f"[{level.upper()}] {ts[-8:]} {msg}")
 
     # ── MQTT ─────────────────────────────────────────────────────────────────
 
@@ -226,14 +222,13 @@ class SmartMattressGUI:
             self.relay_label.config(text=state.upper(), fg=color)
 
         elif topic == "mattress/alerts":
-            level = payload.get("level", "info")
+            level = payload.get("level", "ok").lower()
             msg   = payload.get("message", "")
             color = ALERT_COLORS.get(level, "#CDD6F4")
-            self.alert_var.set(msg)
-            self.alert_label.config(fg=color)
-            ts = datetime.now().strftime("%H:%M:%S")
-            self.alert_listbox.insert(tk.END, f"[{level.upper()}] {ts} {msg}")
-            self.alert_listbox.see(tk.END)
+            self.alert_level_var.set(level.upper())
+            self.alert_msg_var.set(msg)
+            self.alert_level_label.config(fg=color)
+            self.alert_msg_label.config(fg=color)
 
     # ── Chart Update ──────────────────────────────────────────────────────────
 
