@@ -19,7 +19,7 @@ Relay Emulator       ◄─┘                        │
 | `mattress/humidity`      | DHT Emulator      | Data Manager, GUI  |
 | `mattress/setpoint`      | Knob Emulator     | Data Manager, GUI  |
 | `mattress/relay`         | Data Manager      | Relay Emulator, GUI|
-| `mattress/alerts`        | Data Manager      | (logged to DB)     |
+| `mattress/alerts`        | Data Manager      | GUI, DB            |
 
 ## Components
 - **emulators/** — DHT sensor, Knob, and Relay emulators
@@ -46,3 +46,9 @@ pip install -r requirements.txt
 - `temperature_log` — timestamp, temperature, humidity
 - `setpoint_history` — timestamp, setpoint
 - `alerts` — timestamp, level (warning/alarm), message
+
+## Example
+
+![Smart Thermal Mattress GUI](gui_example.png)
+
+The GUI shows live sensor data on the left (Temperature, Humidity, Setpoint) alongside the Relay Status (IDLE / HEATING / COOLING) and an Alert Status panel that updates in real time — green **GOOD** when within range, amber **WARNING** at ±2 °C deviation, red **ALARM** at ±4 °C or extreme temperatures. The right panel shows a rolling 60-point live chart of temperature vs setpoint.

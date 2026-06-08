@@ -61,7 +61,7 @@ class SmartMattressGUI:
         self.current_humidity = tk.StringVar(value="--")
         self.current_setpoint = tk.StringVar(value="--")
         self.relay_state      = tk.StringVar(value="idle")
-        self.alert_level_var  = tk.StringVar(value="OK")
+        self.alert_level_var  = tk.StringVar(value="GOOD")
         self.alert_msg_var    = tk.StringVar(value="System normal")
 
         self._build_ui()
