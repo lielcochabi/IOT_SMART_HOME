@@ -32,6 +32,7 @@ ALARM_DELTA          = 4.0   # °C difference -> Alarm
 EXTREME_LOW          = 10.0  # °C absolute -> Alarm
 EXTREME_HIGH         = 45.0  # °C absolute -> Alarm
 ALERT_REPEAT_INTERVAL = 30   # seconds before the same alert is allowed to fire again
+RELAY_PUBLISH_INTERVAL = 10  # seconds between periodic relay state broadcasts
 
 state = {
     "temperature":    None,
@@ -113,7 +114,7 @@ def on_message(client, _, msg):
             relay_state = determine_relay_state(temp, state["setpoint"])
             if relay_state != state["relay"]:
                 state["relay"] = relay_state
-                client.publish(RELAY_TOPIC, json.dumps({"state": relay_state}))
+                client.publish(RELAY_TOPIC, json.dumps({"state": relay_state}), retain=True)
                 print(f"[DM] Relay command -> {relay_state}")
 
             evaluate_alerts(client, temp, state["setpoint"])
@@ -131,12 +132,28 @@ def on_message(client, _, msg):
             print(f"[DM] Setpoint updated: {setpoint}°C")
 
 
+def _relay_watchdog(client):
+    """Periodically re-evaluate and re-publish relay state so a reopened GUI stays in sync."""
+    while True:
+        time.sleep(RELAY_PUBLISH_INTERVAL)
+        if state["temperature"] is not None:
+            relay_state = determine_relay_state(state["temperature"], state["setpoint"])
+            if relay_state != state["relay"]:
+                state["relay"] = relay_state
+                print(f"[DM] Relay watchdog re-evaluated -> {relay_state}")
+            client.publish(RELAY_TOPIC, json.dumps({"state": state["relay"]}), retain=True)
+            print(f"[DM] Relay watchdog published: {state['relay']}")
+
+
 def main():
+    import threading
     init_db()
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="data_manager")
     client.on_connect = on_connect
     client.on_message = on_message
     client.connect(BROKER, PORT, keepalive=60)
+
+    threading.Thread(target=_relay_watchdog, args=(client,), daemon=True).start()
 
     print("[DM] Data Manager running...")
     try:
