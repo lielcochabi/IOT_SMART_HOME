@@ -26,9 +26,17 @@ def simulate_temperature(current_temp):
 
 
 def simulate_humidity(current_humidity, current_temp):
-    # Humidity rises when temp exceeds setpoint (body heat), drops when cooling
-    drift = (current_temp - state["setpoint"]) * 0.1
-    noise = random.uniform(-0.2, 0.2)
+    overheat = current_temp - state["setpoint"]
+    if overheat > 0:
+        # Rising: humidity climbs with heat buildup
+        target = 45.0 + overheat * 1.5
+        drift_factor = 0.1
+    else:
+        # Target reached or below: humidity drops slowly back down
+        target = 42.0
+        drift_factor = 0.03
+    drift = (target - current_humidity) * drift_factor
+    noise = random.uniform(-0.1, 0.1)
     return round(max(30.0, min(80.0, current_humidity + drift + noise)), 2)
 
 

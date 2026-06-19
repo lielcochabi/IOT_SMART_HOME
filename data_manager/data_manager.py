@@ -38,19 +38,18 @@ state = {
     "temperature":    None,
     "humidity":       None,
     "setpoint":       36.0,
-    "relay":          "idle",
+    "relay":          None,
     "last_alert":     None,
+    "last_alert_level": None,
     "last_alert_time": 0,    # epoch seconds of the last alert publish
 }
 
 
 def determine_relay_state(temp, setpoint):
     delta = temp - setpoint
-    if delta < -1.0:
+    if delta <= 0:
         return "heating"
-    elif delta > 1.0:
-        return "cooling"
-    return "idle"
+    return "cooling"
 
 
 def evaluate_alerts(client, temp, setpoint):
@@ -81,7 +80,11 @@ def evaluate_alerts(client, temp, setpoint):
             client.publish(ALERTS_TOPIC, json.dumps({"level": alert_level, "message": alert_msg}))
             print(f"[DM] ALERT [{alert_level.upper()}] {alert_msg}")
     else:
+        if state["last_alert"] is not None:
+            client.publish(ALERTS_TOPIC, json.dumps({"level": "ok", "message": "System normal"}))
+            print("[DM] Alert cleared — system normal")
         state["last_alert"] = None
+        state["last_alert_level"] = None
         state["last_alert_time"] = 0
 
 
@@ -130,6 +133,13 @@ def on_message(client, _, msg):
             state["setpoint"] = setpoint
             insert_setpoint(setpoint)
             print(f"[DM] Setpoint updated: {setpoint}°C")
+            if state["temperature"] is not None:
+                relay_state = determine_relay_state(state["temperature"], setpoint)
+                if relay_state != state["relay"]:
+                    state["relay"] = relay_state
+                    client.publish(RELAY_TOPIC, json.dumps({"state": relay_state}), retain=True)
+                    print(f"[DM] Relay command -> {relay_state}")
+                evaluate_alerts(client, state["temperature"], setpoint)
 
 
 def _relay_watchdog(client):
