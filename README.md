@@ -1,9 +1,12 @@
-# Personalized Adaptive Thermal Mattress — IoT Smart Home
+# HeatSync — IoT Smart Home
 
-## HeatSync
+## Personalized Adaptive Thermal Mattress 
 
 ## Project Overview
-A simulated IoT system that monitors and controls a smart thermal mattress using MQTT for communication, a Data Manager for processing, SQLite for storage, and a GUI for visualization.
+A simulated IoT system that monitors and controls a smart thermal mattress. The system
+continuously reads temperature and humidity from an emulated DHT sensor, compares readings
+against a user-defined comfort setpoint, and automatically activates or deactivates a heating/cooling
+relay. All data is persisted to SQLite and visualized through a live Tkinter & Matplotlib GUI.
 
 ## System Architecture
 ```
