@@ -78,7 +78,7 @@ class SmartMattressGUI:
         header = tk.Frame(self.root, bg="#11111B", pady=10)
         header.pack(fill=tk.X)
         tk.Label(
-            header, text="🛏  HeatSync:Smart Thermal Mattress",
+            header, text="🛏  HeatSync: Smart Thermal Mattress",
             font=("Segoe UI", 18, "bold"), fg="#CDD6F4", bg="#11111B"
         ).pack()
 
